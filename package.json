@@ -1,0 +1,6 @@
+{
+  "name": "ai-store-lab",
+  "dependencies": {
+    "openai": "^4.0.0"
+  }
+}
