@@ -7,14 +7,13 @@ const openai = new OpenAI({
 
 const STORE_URL = 'http://codfroud.atwebpages.com/products.php';
 
-// تعليمات تحويل النموذج إلى Tool API تُرجع JSON فقط
 const SYSTEM_TOOL_PROMPT = {
   role: 'system',
-  content: `أنت محرك بحث متقدم وقاعدة معرفية متخصصة لمنتجات متجر Codfroud.
-مهمتك الوحيدة: تحليل استفسار الذكاء الاصطناعي الرئيسي وإرجاع كائن JSON دقيق يحتوي على تفاصيل المنتجات المطابقة والبدائل والمخزون.
+  content: `أنت محرك بحث متقدم لمنتجات متجر Codfroud.
+مهمتك: تحليل استفسار الذكاء الاصطناعي الرئيسي وإرجاع JSON دقيق يحتوي على تفاصيل المنتجات وصورها الرئيسية وعدد الصور المتاحة.
 
 قواعد الاستجابة:
-1. يجب أن تكون إجابتك بصيغة JSON فقط دون أي نصوص إضافية أو مقدمات.
+1. الإجابة بصيغة JSON فقط دون أي نصوص إضافية.
 2. نسق الهيكل المطلوب للرد:
 {
   "query_analyzed": "استفسار النية الحقيقية",
@@ -25,7 +24,9 @@ const SYSTEM_TOOL_PROMPT = {
       "price": 100,
       "stock": 5,
       "is_available": true,
-      "match_reason": "سبب تطابق المنتج مع طلب العميل"
+      "main_image": "رابط الصورة الرئيسية الأولى فقط",
+      "images_count": 3,
+      "match_reason": "سبب التطابق"
     }
   ],
   "alternative_products": [],
@@ -44,28 +45,25 @@ export default async function handler(req, res) {
   const userQuery = query || message || '';
 
   try {
-    // 1. جلب بيانات المنتجات مباشرة من Awardspace
     const storeRes = await fetch(STORE_URL, {
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
     });
     const catalogData = await storeRes.json();
 
-    // 2. تحليل الكتالوج عبر الذكاء الاصطناعي واستخراج البيانات المطلوبة بصيغة JSON
     const response = await openai.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
-      response_format: { type: 'json_object' }, // إجبار النموذج على إرجاع JSON صريح
+      response_format: { type: 'json_object' },
       messages: [
         SYSTEM_TOOL_PROMPT,
         {
           role: 'user',
-          content: `طلب البحث: "${userQuery}"\n\nكتالوج المنتجات الحقيقي بالمتجر:\n${JSON.stringify(catalogData)}`
+          content: `طلب البحث: "${userQuery}"\n\nكتالوج المنتجات الحقيقي:\n${JSON.stringify(catalogData)}`
         }
       ]
     });
 
     const toolResult = JSON.parse(response.choices[0].message.content);
 
-    // 3. إرجاع النتيجة كـ API نقي
     return res.status(200).json({
       status: 'success',
       data: toolResult
