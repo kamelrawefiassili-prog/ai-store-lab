@@ -1,6 +1,10 @@
 import OpenAI from 'openai';
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({
+  apiKey: process.env.GROQ_API_KEY,
+  baseURL: 'https://api.groq.com/openai/v1'
+});
+
 const STORE_URL = 'http://codfroud.atwebpages.com/products.php';
 
 export default async function handler(req, res) {
@@ -14,7 +18,7 @@ export default async function handler(req, res) {
 
   try {
     const response = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: 'llama-3.3-70b-versatile',
       messages: [{ role: 'user', content: message }],
       tools: [
         {
@@ -31,13 +35,16 @@ export default async function handler(req, res) {
     const responseMessage = response.choices[0].message;
 
     if (responseMessage.tool_calls) {
-      // جلب البيانات من رابط متجرك على Awardspace
-      const storeRes = await fetch(STORE_URL);
+      // إرسال User-Agent لتخطي حظر Awardspace للطلبات الآلية
+      const storeRes = await fetch(STORE_URL, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
+        }
+      });
       const productsData = await storeRes.json();
 
-      // إرسال البيانات للذكاء الاصطناعي ليصيغ الرد
       const finalResponse = await openai.chat.completions.create({
-        model: 'gpt-4o-mini',
+        model: 'llama-3.3-70b-versatile',
         messages: [
           { role: 'user', content: message },
           responseMessage,
@@ -55,6 +62,7 @@ export default async function handler(req, res) {
     return res.status(200).json({ answer: responseMessage.content });
 
   } catch (error) {
-    return res.status(500).json({ error: error.message });
+    // إرجاع رسالة الخطأ الحقيقية لمعرفتها فوراً
+    return res.status(500).json({ error: 'خطأ بالسيرفر: ' + error.message });
   }
 }
