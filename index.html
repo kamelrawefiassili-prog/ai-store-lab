@@ -3,71 +3,61 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>مختبر شات المتجر الذكي</title>
+  <title>مختبر أداة المنتجات (Catalog Tool API)</title>
   <style>
     * { box-sizing: border-box; }
-    body { font-family: system-ui, -apple-system, sans-serif; background: #f0f2f5; display: flex; justify-content: center; padding: 20px; margin: 0; }
-    .chat-box { width: 100%; max-width: 500px; background: white; border-radius: 12px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); height: 90vh; display: flex; flex-direction: column; }
-    .messages { flex: 1; overflow-y: auto; border: 1px solid #eee; padding: 12px; border-radius: 8px; margin: 15px 0; background: #fafafa; }
-    .msg { margin: 8px 0; padding: 10px 14px; border-radius: 15px; max-width: 85%; font-size: 15px; line-height: 1.4; }
-    .user { background: #0084ff; color: white; margin-left: auto; border-bottom-left-radius: 3px; }
-    .bot { background: #e4e6eb; color: #050505; margin-right: auto; border-bottom-right-radius: 3px; }
-    .input-area { display: flex; gap: 8px; }
-    input { flex: 1; padding: 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 15px; outline: none; }
-    button { padding: 12px 18px; background: #0084ff; color: white; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; }
-    button:hover { background: #006bce; }
+    body { font-family: monospace, system-ui; background: #1e1e1e; color: #d4d4d4; display: flex; justify-content: center; padding: 20px; margin: 0; }
+    .container { width: 100%; max-width: 700px; background: #252526; border-radius: 8px; padding: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }
+    h3 { color: #4ec9b0; margin-top: 0; }
+    .input-area { display: flex; gap: 8px; margin-bottom: 20px; }
+    input { flex: 1; padding: 12px; background: #3c3c3c; color: white; border: 1px solid #555; border-radius: 6px; outline: none; font-size: 14px; }
+    button { padding: 12px 20px; background: #0e639c; color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+    button:hover { background: #1177bb; }
+    pre { background: #1e1e1e; padding: 15px; border-radius: 6px; border: 1px solid #444; overflow-x: auto; color: #ce9178; font-size: 13px; line-height: 1.5; white-space: pre-wrap; }
   </style>
 </head>
 <body>
 
-<div class="chat-box">
-  <h3 style="margin: 0; color: #333;">🤖 الموظف الذكي لمتجر Codfroud</h3>
-  <p style="margin: 5px 0 0 0; font-size: 12px; color: #666;">متصل بالمخزون الحي عبر Awardspace</p>
-  
-  <div class="messages" id="msgs">
-    <div class="msg bot">مرحباً بك! أنا مساعد المبيعات الذكي، كيف يمكنني مساعدتك اليوم؟</div>
-  </div>
+<div class="container">
+  <h3>🛠️ واجهة اختبار أداة الكتالوج (Tool API Output)</h3>
+  <p style="font-size: 12px; color: #888;">استعلام البيانات الموجهة للذكاء الاصطناعي الرئيسي (JSON Response)</p>
   
   <div class="input-area">
-    <input type="text" id="userInput" placeholder="اسأل عن الشواحن أو السراويل..." onkeypress="if(event.key==='Enter') send()">
-    <button onclick="send()">إرسال</button>
+    <input type="text" id="userInput" placeholder="أدخل كلمة البحث (مثال: هل لديكم هاتف)..." onkeypress="if(event.key==='Enter') testTool()">
+    <button onclick="testTool()">إرسال الطلب</button>
   </div>
+
+  <div id="status" style="font-size: 13px; color: #dcdcaa; margin-bottom: 10px;"></div>
+  <pre id="jsonResult">// ستظهر نتيجة الـ JSON المنظمة هنا ليقرأها الذكاء الاصطناعي الرئيسي...</pre>
 </div>
 
 <script>
-  // يتصل تلقائياً بالـ API الخاص بـ Vercel على نفس النطاق
   const VERCEL_URL = '/api/chat';
 
-  async function send() {
+  async function testTool() {
     const input = document.getElementById('userInput');
-    const msgs = document.getElementById('msgs');
+    const resultBox = document.getElementById('jsonResult');
+    const statusBox = document.getElementById('status');
+    
     if (!input.value.trim()) return;
 
-    const userText = input.value;
-    msgs.innerHTML += `<div class="msg user">${userText}</div>`;
-    input.value = '';
-    msgs.scrollTop = msgs.scrollHeight;
-
-    const loadingId = 'load-' + Date.now();
-    msgs.innerHTML += `<div class="msg bot" id="${loadingId}">⏳ جاري الفحص والمراجعة...</div>`;
-    msgs.scrollTop = msgs.scrollHeight;
+    statusBox.innerText = '⏳ جاري استدعاء الـ API وفلترة المنتجات...';
+    resultBox.innerText = 'Loading...';
 
     try {
       const res = await fetch(VERCEL_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: userText })
+        body: JSON.stringify({ query: input.value })
       });
-      const data = await res.json();
-      document.getElementById(loadingId).remove();
       
-      const reply = data.answer || data.error || 'لم أتمكن من الحصول على إجابة.';
-      msgs.innerHTML += `<div class="msg bot">${reply}</div>`;
+      const data = await res.json();
+      statusBox.innerText = '✅ تم استلام الاستجابة بنجاح (HTTP 200):';
+      resultBox.innerText = JSON.stringify(data, null, 2);
     } catch (err) {
-      document.getElementById(loadingId).remove();
-      msgs.innerHTML += `<div class="msg bot" style="color:red">❌ حدث خطأ في الاتصال بالخادم</div>`;
+      statusBox.innerText = '❌ حدث خطأ في الاتصال:';
+      resultBox.innerText = err.message;
     }
-    msgs.scrollTop = msgs.scrollHeight;
   }
 </script>
 
