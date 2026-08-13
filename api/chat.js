@@ -7,15 +7,30 @@ const openai = new OpenAI({
 
 const STORE_URL = 'http://codfroud.atwebpages.com/products.php';
 
-// تعليمات صارمة للموظف الذكي لمنع الهلوسة
-const SYSTEM_PROMPT = {
+// تعليمات تحويل النموذج إلى Tool API تُرجع JSON فقط
+const SYSTEM_TOOL_PROMPT = {
   role: 'system',
-  content: `أنت موظف مبيعات دقيق لمتجر Codfroud.
-قواعد العمل الصارمة:
-1. اعتمد فقط وبدقة على بيانات قائمة المنتجات المجلوبة من المتجر.
-2. انتبه جيداً للفرق بين المنتج الرئيسي وملحقاته (مثلاً: "شاحن آيفون" هو شاحن وملحق وليس جهاز هاتف).
-3. إذا سأل العميل عن منتج غير موجود بكتالوج المتجر، قل له بلطف أن المنتج غير متوفر لديكم.
-4. إذا كان مخزون المنتج (stock) يساوي 0، اذكر للعميل أن المنتج نافد حالياً من المخزون.`
+  content: `أنت محرك بحث متقدم وقاعدة معرفية متخصصة لمنتجات متجر Codfroud.
+مهمتك الوحيدة: تحليل استفسار الذكاء الاصطناعي الرئيسي وإرجاع كائن JSON دقيق يحتوي على تفاصيل المنتجات المطابقة والبدائل والمخزون.
+
+قواعد الاستجابة:
+1. يجب أن تكون إجابتك بصيغة JSON فقط دون أي نصوص إضافية أو مقدمات.
+2. نسق الهيكل المطلوب للرد:
+{
+  "query_analyzed": "استفسار النية الحقيقية",
+  "matched_products": [
+    {
+      "id": 1,
+      "name": "اسم المنتج",
+      "price": 100,
+      "stock": 5,
+      "is_available": true,
+      "match_reason": "سبب تطابق المنتج مع طلب العميل"
+    }
+  ],
+  "alternative_products": [],
+  "out_of_stock_matches": []
+}`
 };
 
 export default async function handler(req, res) {
@@ -25,54 +40,41 @@ export default async function handler(req, res) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const { message } = req.body;
+  const { query, message } = req.body;
+  const userQuery = query || message || '';
 
   try {
-    const userMessage = { role: 'user', content: message };
+    // 1. جلب بيانات المنتجات مباشرة من Awardspace
+    const storeRes = await fetch(STORE_URL, {
+      headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
+    });
+    const catalogData = await storeRes.json();
 
+    // 2. تحليل الكتالوج عبر الذكاء الاصطناعي واستخراج البيانات المطلوبة بصيغة JSON
     const response = await openai.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
-      messages: [SYSTEM_PROMPT, userMessage],
-      tools: [
+      response_format: { type: 'json_object' }, // إجبار النموذج على إرجاع JSON صريح
+      messages: [
+        SYSTEM_TOOL_PROMPT,
         {
-          type: 'function',
-          function: {
-            name: 'get_store_products',
-            description: 'جلب قائمة منتجات المتجر الحالية والتحقق من الأسعار والمخزون',
-            parameters: { type: 'object', properties: {} }
-          }
+          role: 'user',
+          content: `طلب البحث: "${userQuery}"\n\nكتالوج المنتجات الحقيقي بالمتجر:\n${JSON.stringify(catalogData)}`
         }
       ]
     });
 
-    const responseMessage = response.choices[0].message;
+    const toolResult = JSON.parse(response.choices[0].message.content);
 
-    if (responseMessage.tool_calls) {
-      const storeRes = await fetch(STORE_URL, {
-        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
-      });
-      const productsData = await storeRes.json();
-
-      const finalResponse = await openai.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
-        messages: [
-          SYSTEM_PROMPT,
-          userMessage,
-          responseMessage,
-          {
-            role: 'tool',
-            tool_call_id: responseMessage.tool_calls[0].id,
-            content: JSON.stringify(productsData)
-          }
-        ]
-      });
-
-      return res.status(200).json({ answer: finalResponse.choices[0].message.content });
-    }
-
-    return res.status(200).json({ answer: responseMessage.content });
+    // 3. إرجاع النتيجة كـ API نقي
+    return res.status(200).json({
+      status: 'success',
+      data: toolResult
+    });
 
   } catch (error) {
-    return res.status(500).json({ error: 'خطأ بالسيرفر: ' + error.message });
+    return res.status(500).json({
+      status: 'error',
+      error: error.message
+    });
   }
 }
