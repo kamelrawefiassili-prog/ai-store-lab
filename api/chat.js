@@ -7,6 +7,17 @@ const openai = new OpenAI({
 
 const STORE_URL = 'http://codfroud.atwebpages.com/products.php';
 
+// تعليمات صارمة للموظف الذكي لمنع الهلوسة
+const SYSTEM_PROMPT = {
+  role: 'system',
+  content: `أنت موظف مبيعات دقيق لمتجر Codfroud.
+قواعد العمل الصارمة:
+1. اعتمد فقط وبدقة على بيانات قائمة المنتجات المجلوبة من المتجر.
+2. انتبه جيداً للفرق بين المنتج الرئيسي وملحقاته (مثلاً: "شاحن آيفون" هو شاحن وملحق وليس جهاز هاتف).
+3. إذا سأل العميل عن منتج غير موجود بكتالوج المتجر، قل له بلطف أن المنتج غير متوفر لديكم.
+4. إذا كان مخزون المنتج (stock) يساوي 0، اذكر للعميل أن المنتج نافد حالياً من المخزون.`
+};
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -17,9 +28,11 @@ export default async function handler(req, res) {
   const { message } = req.body;
 
   try {
+    const userMessage = { role: 'user', content: message };
+
     const response = await openai.chat.completions.create({
       model: 'llama-3.3-70b-versatile',
-      messages: [{ role: 'user', content: message }],
+      messages: [SYSTEM_PROMPT, userMessage],
       tools: [
         {
           type: 'function',
@@ -35,18 +48,16 @@ export default async function handler(req, res) {
     const responseMessage = response.choices[0].message;
 
     if (responseMessage.tool_calls) {
-      // إرسال User-Agent لتخطي حظر Awardspace للطلبات الآلية
       const storeRes = await fetch(STORE_URL, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'
-        }
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' }
       });
       const productsData = await storeRes.json();
 
       const finalResponse = await openai.chat.completions.create({
         model: 'llama-3.3-70b-versatile',
         messages: [
-          { role: 'user', content: message },
+          SYSTEM_PROMPT,
+          userMessage,
           responseMessage,
           {
             role: 'tool',
@@ -62,7 +73,6 @@ export default async function handler(req, res) {
     return res.status(200).json({ answer: responseMessage.content });
 
   } catch (error) {
-    // إرجاع رسالة الخطأ الحقيقية لمعرفتها فوراً
     return res.status(500).json({ error: 'خطأ بالسيرفر: ' + error.message });
   }
 }
