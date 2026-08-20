@@ -1,15 +1,7 @@
-import OpenAI from 'openai';
-
-const openai = new OpenAI({
-  apiKey: process.env.GROQ_API_KEY,
-  baseURL: 'https://api.groq.com/openai/v1'
-});
-
 const STORE_URL = 'http://codfroud.atwebpages.com/products.php';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 
-const SYSTEM_TOOL_PROMPT = {
-  role: 'system',
-  content: `أنت محرك بحث متقدم لمنتجات متجر Codfroud.
+const SYSTEM_TOOL_PROMPT = `أنت محرك بحث متقدم لمنتجات متجر Codfroud.
 مهمتك: تحليل استفسار الذكاء الاصطناعي الرئيسي وإرجاع JSON دقيق يحتوي على تفاصيل المنتجات وصورها الرئيسية وعدد الصور المتاحة.
 
 قواعد الاستجابة:
@@ -31,8 +23,7 @@ const SYSTEM_TOOL_PROMPT = {
   ],
   "alternative_products": [],
   "out_of_stock_matches": []
-}`
-};
+}`;
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -41,7 +32,7 @@ export default async function handler(req, res) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
 
-  const { query, message } = req.body;
+  const { query, message } = req.body || {};
   const userQuery = query || message || '';
 
   try {
@@ -50,19 +41,40 @@ export default async function handler(req, res) {
     });
     const catalogData = await storeRes.json();
 
-    const response = await openai.chat.completions.create({
-      model: 'llama-3.3-70b-versatile',
-      response_format: { type: 'json_object' },
-      messages: [
-        SYSTEM_TOOL_PROMPT,
-        {
-          role: 'user',
-          content: `طلب البحث: "${userQuery}"\n\nكتالوج المنتجات الحقيقي:\n${JSON.stringify(catalogData)}`
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${GEMINI_API_KEY}`;
+
+    const geminiRes = await fetch(geminiUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        systemInstruction: {
+          parts: [{ text: SYSTEM_TOOL_PROMPT }]
+        },
+        contents: [
+          {
+            role: 'user',
+            parts: [{ text: `طلب البحث: "${userQuery}"\n\nكتالوج المنتجات الحقيقي:\n${JSON.stringify(catalogData)}` }]
+          }
+        ],
+        generationConfig: {
+          temperature: 0.1,
+          responseMimeType: 'application/json'
         }
-      ]
+      })
     });
 
-    const toolResult = JSON.parse(response.choices[0].message.content);
+    if (!geminiRes.ok) {
+      const errText = await geminiRes.text();
+      throw new Error(`فشل Gemini API (${geminiRes.status}): ${errText}`);
+    }
+
+    const geminiData = await geminiRes.json();
+    let rawContent = geminiData.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+
+    // تنظيف علامات Markdown لمنع أخطاء الـ JSON
+    rawContent = rawContent.replace(/```json/gi, '').replace(/```/g, '').trim();
+
+    const toolResult = JSON.parse(rawContent);
 
     return res.status(200).json({
       status: 'success',
